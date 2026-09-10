@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>No-Fire Competition Checklist</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f5f5f5; color: #222; }
+    .container { max-width: 760px; margin: auto; padding: 24px 16px 40px; }
+    h1 { margin-bottom: 6px; }
+    .subtitle { color: #666; }
+    .user-bar { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 14px 18px; margin: 14px 0; display: flex; align-items: center; gap: 10px; }
+    .user-bar input { flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; }
+    .progress, section { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 18px; margin: 14px 0; }
+    .bar { height: 10px; background: #e5e5e5; border-radius: 10px; overflow: hidden; margin: 8px 0 12px; }
+    #barFill { height: 100%; width: 0; background: #333; transition: .2s; }
+    .item-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; border-bottom: 1px solid #eee; }
+    .item-label { display: flex; align-items: center; cursor: pointer; flex: 1; }
+    .item-label input { margin-right: 10px; }
+    .item-label.done { text-decoration: line-through; color: #888; }
+    .assign-btn { font-size: 12px; padding: 5px 9px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
+    .badge { font-size: 12px; font-weight: bold; background: #e9ecef; padding: 4px 8px; border-radius: 12px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>No-Fire Competition Checklist</h1>
+  <p class="subtitle">4 spicy items + 1 sweet + 1 beverage</p>
+
+  <div class="user-bar">
+    <label for="userName"><strong>Your Name:</strong></label>
+    <input type="text" id="userName" placeholder="Enter your name to claim items">
+  </div>
+
+  <div class="progress">
+    <b><span id="count">0</span> / <span id="total">0</span> completed</b>
+    <div class="bar"><div id="barFill"></div></div>
+  </div>
+
+  <div id="checklist">Loading items from sheet...</div>
+</div>
+
+<script>
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyjhnzcO9vhkzS9rBw4AVUvmCV10LNRn1ZT03Apx_GVp8ex_NSglg3kWRBXdFGVQrkQPQ/exec";
+
+  const sections = {
+    "Ingredients": ["Puffed rice","Sev","Papad","Bread","Cheese","Sweet corn (ready-boiled)","Onion","Tomato","Cucumber","Capsicum","Green chili","Coriander","Mint leaves","Lemon","Green chutney","Tamarind/sweet chutney","Chaat masala","Red chili powder","Black pepper","Salt","Sugar/sugar syrup","Chocolate biscuits","Condensed milk","Cocoa powder","Sprinkles/coconut","Soda","Ice"],
+    "Equipment & Serving": ["Mixing bowls","Plates","Bowls/cups","Glasses for beverage","Spoons","Forks","Knives","Chopping board","Serving spoons","Tissues/napkins","Disposable gloves","Aluminum foil/plastic wrap","Toothpicks"],
+    "Presentation": ["Table cloth","Small decorative bowls","Garnishing coriander/mint","Lemon slices","Labels/name cards for dishes","Tray for final presentation"],
+    "Before Leaving Home": ["Wash and pack vegetables","Boil/prepare corn beforehand","Pack chutneys in sealed containers","Pre-measure spices","Keep everything in separate containers","Carry a trash bag","Check competition rules for what no-fire allows"]
+  };
+
+  const nameInput = document.getElementById("userName");
+  nameInput.value = localStorage.getItem("my_name") || "";
+  nameInput.addEventListener("input", () => localStorage.setItem("my_name", nameInput.value.trim()));
+
+  let sheetData = {};
+  let allItems = [];
+
+  async function syncWithSheet() {
+    try {
+      const res = await fetch(SCRIPT_URL);
+      sheetData = await res.json();
+      render();
+    } catch (e) {
+      console.error("Could not fetch data", e);
+      render();
+    }
+  }
+
+  async function postChange(payload) {
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  }
+
+  function render() {
+    const root = document.getElementById("checklist");
+    root.innerHTML = "";
+    allItems = [];
+
+    for (const [secTitle, list] of Object.entries(sections)) {
+      const sec = document.createElement("section");
+      sec.innerHTML = `<h2>${secTitle}</h2>`;
+
+      list.forEach(item => {
+        allItems.push(item);
+        const itemInfo = sheetData[item] || { assignedTo: "", completed: false };
+
+        const row = document.createElement("div");
+        row.className = "item-row";
+
+        const label = document.createElement("label");
+        label.className = "item-label" + (itemInfo.completed ? " done" : "");
+        label.innerHTML = `<input type="checkbox" ${itemInfo.completed ? "checked" : ""}> ${item}`;
+
+        const chk = label.querySelector("input");
+        chk.addEventListener("change", () => {
+          label.classList.toggle("done", chk.checked);
+          updateProgress();
+          postChange({ item, completed: chk.checked });
+        });
+
+        const actionSpan = document.createElement("span");
+        if (itemInfo.assignedTo) {
+          actionSpan.innerHTML = `<span class="badge">${itemInfo.assignedTo}</span>`;
+        } else {
+          const btn = document.createElement("button");
+          btn.className = "assign-btn";
+          btn.textContent = "Bring this";
+          btn.onclick = () => {
+            const user = nameInput.value.trim();
+            if (!user) {
+              alert("Enter your name at the top first!");
+              nameInput.focus();
+              return;
+            }
+            sheetData[item] = sheetData[item] || {};
+            sheetData[item].assignedTo = user;
+            actionSpan.innerHTML = `<span class="badge">${user}</span>`;
+            postChange({ item, name: user });
+          };
+          actionSpan.appendChild(btn);
+        }
+
+        row.appendChild(label);
+        row.appendChild(actionSpan);
+        sec.appendChild(row);
+      });
+
+      root.appendChild(sec);
+    }
+
+    document.getElementById("total").textContent = allItems.length;
+    updateProgress();
+  }
+
+  function updateProgress() {
+    const checked = document.querySelectorAll(".item-label input:checked").length;
+    document.getElementById("count").textContent = checked;
+    document.getElementById("barFill").style.width = (checked / allItems.length * 100) + "%";
+  }
+
+  syncWithSheet();
+</script>
+</body>
+</html>
